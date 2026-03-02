@@ -1,0 +1,39 @@
+package com.ragnexus.kb.domain.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
+
+/**
+ * RAG 对话请求体。
+ */
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+@Schema(description = "RAG 智能对话请求")
+public class KbChatRequest {
+
+    @Schema(description = "会话 ID，用于多轮对话上下文", example = "yorushika-session-001")
+    private String sessionId;
+
+    @NotBlank(message = "query 不能为空")
+    @Schema(description = "用户问题", example = "请结合知识库，分析《思想犯》这首歌想传达的核心情感？", requiredMode = Schema.RequiredMode.REQUIRED)
+    private String query;
+
+    @NotNull
+    @Positive
+    @Schema(description = "召回 Top-K 条相关切片", example = "3", defaultValue = "3")
+    @Builder.Default
+    private Integer topK = 3;
+
+    @Schema(description = "LLM 温度", example = "0.3", defaultValue = "0.3")
+    @Builder.Default
+    private Double temperature = 0.3;
+}

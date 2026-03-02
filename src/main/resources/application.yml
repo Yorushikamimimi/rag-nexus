@@ -1,0 +1,38 @@
+server:
+  port: 8080
+
+# 抓取微服务地址（Docker 编排时通过 SCRAPER_SERVICE_URL 注入 http://python-scraper:8000）
+scraper:
+  service:
+    url: ${SCRAPER_SERVICE_URL:http://127.0.0.1:8000}
+
+spring:
+  profiles:
+    active: local   # 显式激活 local，加载 application-local.yml（数据库密码、OpenAI Key 等）
+  application:
+    name: rag-nexus
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/postgres}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  # 本地覆盖：复制 application-local.yml.example 为 application-local.yml 并填写实际密码
+  ai:
+    vectorstore:
+      pgvector:
+        initialize-schema: true
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+    openai:
+      api-key: ${OPENAI_API_KEY:your-openai-api-key}
+      chat:
+        options:
+          model: gpt-4o-mini
+          temperature: 0.3
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html

@@ -1,0 +1,17 @@
+# Yorushika Python 抓取微服务
+# 与 scraper_service.py 同目录
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# 复制依赖文件并安装
+COPY requirements-scraper.txt .
+RUN pip install --no-cache-dir -r requirements-scraper.txt
+
+# 复制服务代码
+COPY scraper_service.py .
+# cookies.txt 可选（B 站登录态），可通过 volume 挂载：-v ./cookies.txt:/app/cookies.txt
+
+EXPOSE 8000
+
+CMD ["uvicorn", "scraper_service:app", "--host", "0.0.0.0", "--port", "8000"]

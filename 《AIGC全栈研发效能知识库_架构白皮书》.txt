@@ -1,0 +1,76 @@
+﻿一、 底层存储设计 (PostgreSQL + pgvector)
+在你的数据库里执行以下 SQL，完成向量基建。注意这里我们利用了 PostgreSQL 的扩展特性。
+SQL
+* -- 强制开启向量扩展能力（核心基建）
+* CREATE EXTENSION IF NOT EXISTS vector;
+* * -- 1. 知识文档主表（存储元数据）
+* CREATE TABLE kb_document (
+*     id BIGSERIAL PRIMARY KEY,
+*     doc_name VARCHAR(255) NOT NULL,
+*     source_type VARCHAR(50) NOT NULL, -- e.g., 'TXT', 'MARKDOWN', 'PDF'
+*     author VARCHAR(100) DEFAULT 'System',
+*     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+* );
+* * -- 2. 知识切片与向量表（RAG 核心）
+* CREATE TABLE kb_vector_chunk (
+*     id BIGSERIAL PRIMARY KEY,
+*     doc_id BIGINT REFERENCES kb_document(id) ON DELETE CASCADE,
+*     chunk_content TEXT NOT NULL,
+*     -- 基于 2026 年主流 Embedding 模型的维度设定 (例如 text-embedding-3-small 是 1536 维)
+*     embedding vector(1536), 
+*     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+* );
+* * -- 插入 Yorushika 相关的测试 Mock 数据，方便后续调试召回率
+* INSERT INTO kb_document (doc_name, source_type, author) 
+* VALUES 
+* ('思想犯_Lyrics_Analysis.md', 'MARKDOWN', 'n-buna'), 
+* ('夜行_Production_Notes.txt', 'TXT', 'suis');
+* * -- （注：实际的 embedding 字段是由 Spring AI 自动计算并存入的，此处仅 Mock 文本内容）
+* INSERT INTO kb_vector_chunk (doc_id, chunk_content, embedding)
+* VALUES 
+* (1, '人に優しい歌が好きだ。アトラクトライトみたいな歌が好きだ。 (我喜欢对人温柔的歌。喜欢像Attract Light那样的歌。)', '[0.11, -0.02, 0.85, ...]'::vector),
+* (2, 'ねぇ、このまま夜が来たら、僕らどうなるんだろうね。 (呐，如果黑夜就这样降临，我们会变成什么样呢。)', '[-0.05, 0.44, 0.21, ...]'::vector);
+
+
+二、 RESTful API 契约设计
+这是我们的前后端联调生命线，必须严格遵守。
+1. 知识库注入接口 (Ingestion API)
+* Endpoint: POST /api/v1/kb/ingest
+* 职责: 接收文本，调用 Spring AI 的 DocumentReader 和 TokenTextSplitter 进行文本切割，随后调用 Embedding Model 存入 PostgreSQL。
+* Request Payload:
+JSON
+{
+*   "docName": "盗作_Concept_Album.md",
+*   "content": "音楽の盗作をする男を主人公とした男の破壊衝動の形... (以抄袭音乐的男人为主人公，展现男人破坏冲动的一种形式...)",
+*   "chunkSize": 500,
+*   "overlap": 50
+* }
+   * 2. RAG 智能对话接口 (Chat API)
+   * Endpoint: POST /api/v1/kb/chat
+   * 职责: 接收用户 Query，将其向量化后去 kb_vector_chunk 表中做余弦相似度（Cosine Similarity）比对，提取 Top-K 个最相关的切片，拼装进 System Prompt 后请求 LLM 生成最终回答。
+   * Request Payload:
+JSON
+{
+   *   "query": "请结合知识库，分析《思想犯》这首歌想传达的核心情感？",
+   *   "topK": 3,
+   *   "temperature": 0.3
+   * }
+      *       * Response Mock Data (Yorushika Context):
+JSON
+{
+      *   "code": 200,
+      *   "message": "success",
+      *   "data": {
+      *     "answer": "根据知识库中【思想犯_Lyrics_Analysis.md】的切片信息，这首歌传达了对'对人温柔的歌'的向往，以及创作者内在的矛盾与破坏冲动...",
+      *     "citations": ["思想犯_Lyrics_Analysis.md"]
+      *   }
+      * }
+         * 三、 核心类的职责边界划分
+在你的 Spring Boot 3.x 工程中，我们需要建立以下几个核心组件。实体类务必打上 @Data, @Builder, @NoArgsConstructor, @AllArgsConstructor 的 Lombok 组合拳，拒绝手动写 Getter/Setter 污染视线。
+         1. KbIngestionService (知识注入服务)：
+         * 核心依赖: 注入 Spring AI 的 EmbeddingModel 和 VectorStore。
+         * 职责: 专职负责数据的预处理清洗（ETL）、文本分块（Chunking）和向量持久化。
+         2. RagChatService (大语言模型对话服务)：
+         * 核心依赖: 注入 ChatClient (Spring Boot 3.x 引入的流畅 API 设计) 和 VectorStore。
+         * 职责: 组装 Prompt Template，控制大模型的上下文窗口，处理流式（Flux）响应或者阻塞式响应，并做好 API 限流和超时兜底机制。
+         *
