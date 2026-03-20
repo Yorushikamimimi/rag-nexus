@@ -6,6 +6,7 @@ import com.ragnexus.kb.domain.dto.KbChatResponse;
 import com.ragnexus.kb.domain.dto.KbIngestRequest;
 import com.ragnexus.kb.domain.dto.KbIngestUrlRequest;
 import com.ragnexus.kb.service.KbIngestionService;
+import com.ragnexus.kb.service.KbQueryService;
 import com.ragnexus.kb.service.RagChatService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,6 +31,7 @@ import java.util.Map;
 public class KbController {
 
     private final KbIngestionService kbIngestionService;
+    private final KbQueryService kbQueryService;
     private final RagChatService ragChatService;
 
     @Operation(summary = "知识库注入", description = "接收文本，分块后写入 vector_store，元数据写入 Document.metadata")
@@ -85,6 +87,16 @@ public class KbController {
     public Result<KbChatResponse> chat(@Valid @RequestBody KbChatRequest request) {
         KbChatResponse data = ragChatService.chat(request);
         return Result.ok(data);
+    }
+
+    @GetMapping(value = "/stats", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Result<Map<String, Object>> stats() {
+        try {
+            return Result.ok(kbQueryService.getStats());
+        } catch (Exception e) {
+            log.warn("stats failed: {}", e.getMessage());
+            return Result.fail("获取知识库统计失败: " + e.getMessage());
+        }
     }
 
     @Operation(summary = "RAG 流式对话", description = "SSE 流式输出，实时推送 LLM 生成内容，降低首字延迟")

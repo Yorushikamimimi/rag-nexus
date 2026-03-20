@@ -1,0 +1,21 @@
+# 测试环境配置：覆盖 src/main/resources/application.yml，屏蔽所有外部依赖
+# @WebMvcTest 只启动 Web 层，此文件用于防止 Spring Boot 尝试连接真实 DB / LLM
+spring:
+  profiles:
+    active: test
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  ai:
+    openai:
+      api-key: test-dummy-key
+      base-url: http://localhost:11434
+    vectorstore:
+      pgvector:
+        initialize-schema: false
+
+scraper:
+  service:
+    url: http://localhost:8000

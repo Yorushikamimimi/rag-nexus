@@ -1,0 +1,26 @@
+# cookies.txt — Netscape HTTP Cookie File（示例占位）
+#
+# 用途：为 yt-dlp 提供登录态，提升 B 站 / YouTube 视频元数据抓取成功率。
+#       不配置此文件时，仅能抓取公开视频，效果基本够用。
+#
+# 使用方法：
+#   1. 使用浏览器插件（如 "Get cookies.txt LOCALLY"）从已登录的 B 站账号导出 cookies
+#   2. 将导出文件重命名为 cookies.txt
+#   3. 放置位置：
+#      - Docker 部署：放在项目根目录，docker-compose.yml 中取消注释 volume 挂载行
+#        volumes:
+#          - ./cookies.txt:/app/cookies.txt:ro
+#      - 本地运行 scraper_service.py：放在 scripts/ 目录下
+#      - 本地运行 batch_ingest_agent.py：放在项目根目录
+#
+# 安全注意事项：
+#   - cookies.txt 已加入 .gitignore，切勿提交到版本库
+#   - cookies.txt 包含账号登录态，请勿泄露
+#   - 定期更新 cookie（登录态过期后需重新导出）
+#
+# 文件格式（Netscape 格式示例）：
+# # Netscape HTTP Cookie File
+# .bilibili.com	TRUE	/	FALSE	<过期时间戳>	<cookie名>	<cookie值>
+# .bilibili.com	TRUE	/	TRUE	<过期时间戳>	SESSDATA	<your-sessdata-here>
+# .bilibili.com	TRUE	/	FALSE	<过期时间戳>	DedeUserID	<your-userid-here>
+# .bilibili.com	TRUE	/	FALSE	<过期时间戳>	bili_jct	<your-bili-jct-here>

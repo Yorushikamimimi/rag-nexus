@@ -1,11 +1,11 @@
-# Yorushika AIGC 概念引擎 - 一键容器化编排
-# 使用方式: docker-compose up -d
+# RAG-Nexus - 一键容器化编排
+# 使用方式: docker-compose up -d --build
 
 services:
   # 1. PostgreSQL + pgvector
 
   postgres-vector:
-    # 使用 pgvector 官方镜像（ankane/pgvector 已归档）
+    # 使用 pgvector 官方镜像（pgvector/pgvector，原 ankane/pgvector 已归档）
     image: pgvector/pgvector:pg16
     container_name: rag-nexus-pgvector
     environment:
@@ -24,7 +24,7 @@ services:
       retries: 5
       start_period: 10s
     networks:
-      - yorushika-net
+      - rag-nexus-net
 
   # 2. Python 抓取微服务
 
@@ -35,11 +35,12 @@ services:
     container_name: rag-nexus-python-scraper
     ports:
       - "8000:8000"
-    # 可选：挂载 B 站 cookies.txt 以提升抓取成功率
+    # 可选：挂载 cookies.txt 以提升 B 站抓取成功率
+    # 格式参考：docs/archive/cookies.example.txt（请勿提交真实 cookie 文件）
     # volumes:
     #   - ./cookies.txt:/app/cookies.txt:ro
     networks:
-      - yorushika-net
+      - rag-nexus-net
 
   # 3. Spring Boot Java 后端
 
@@ -53,7 +54,7 @@ services:
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SCRAPER_SERVICE_URL: http://python-scraper:8000
-      OPENAI_API_KEY: ${OPENAI_API_KEY:your-openai-api-key}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-your-openai-api-key}
       # 若使用阿里云 DashScope，可覆盖：
       # AI_API_KEY: ${AI_API_KEY}
       # SPRING_PROFILES_ACTIVE: docker
@@ -63,7 +64,7 @@ services:
       postgres-vector:
         condition: service_healthy
     networks:
-      - yorushika-net
+      - rag-nexus-net
 
   # 4. Vue 3 前端（Nginx）
 
@@ -77,11 +78,11 @@ services:
     depends_on:
       - java-backend
     networks:
-      - yorushika-net
+      - rag-nexus-net
 
 volumes:
   postgres_data:
 
 networks:
-  yorushika-net:
+  rag-nexus-net:
     driver: bridge

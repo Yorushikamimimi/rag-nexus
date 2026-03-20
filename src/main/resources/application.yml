@@ -1,5 +1,10 @@
 server:
   port: 8080
+  servlet:
+    encoding:
+      enabled: true
+      force: true
+      charset: UTF-8
 
 # 抓取微服务地址（Docker 编排时通过 SCRAPER_SERVICE_URL 注入 http://python-scraper:8000）
 scraper:

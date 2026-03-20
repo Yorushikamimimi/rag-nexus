@@ -1,6 +1,12 @@
 """
-Yorushika 视频元数据抓取微服务。
+视频元数据抓取微服务。
 被动响应 RESTful API，仅负责 extract，不向 Spring Boot 推送。
+
+部署说明：
+  - Docker 运行（推荐）：Dockerfile.python 将本文件复制到 /app/scraper_service.py
+    cookies.txt 通过 volume 挂载到 /app/cookies.txt（docker-compose.yml 中已注释示例）
+  - 本地运行：在 scripts/ 目录下执行 uvicorn scraper_service:app --reload
+    此时 cookies.txt 应放在 scripts/ 目录下，或使用绝对路径
 """
 import logging
 import os
@@ -8,16 +14,18 @@ import traceback
 from typing import Any
 
 import yt_dlp
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-# 项目根目录的 cookies.txt（Netscape 格式），B 站 cookie 仅对 bilibili.com 链接有效
+# Docker 内：本文件被复制到 /app/scraper_service.py，cookies.txt 通过 volume 挂载到 /app/
+# 本地运行：cookies.txt 与本文件同目录（scripts/cookies.txt）
+# 参考占位文件格式：docs/archive/cookies.example.txt
 COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Yorushika Scraper Service", version="1.0.0")
+app = FastAPI(title="RAG-Nexus Scraper Service", version="1.0.0")
 
 
 # ---------- Pydantic DTOs ----------
@@ -42,7 +50,7 @@ class ApiResponse(BaseModel):
     data: ExtractData | None = None
 
 
-# ---------- 核心抓取逻辑（迁移自 yorushika_agent） ----------
+# ---------- 核心抓取逻辑 ----------
 
 
 def _extract_video_metadata(video_url: str) -> ExtractData:
@@ -69,7 +77,7 @@ def _extract_video_metadata(video_url: str) -> ExtractData:
         return ExtractData(
             title=info_dict.get("title") or "Unknown Title",
             description=info_dict.get("description") or "",
-            uploader=info_dict.get("uploader") or "n-buna",
+            uploader=info_dict.get("uploader") or "unknown",
         )
 
 

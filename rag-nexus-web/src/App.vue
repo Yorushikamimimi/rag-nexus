@@ -13,19 +13,53 @@ interface ChatMessage {
   loading?: boolean
 }
 
+interface KbDocStat {
+  docName: string
+  chunks: number
+}
+
+interface KbStatsData {
+  totalChunks: number
+  totalDocs: number
+  documents: KbDocStat[]
+}
+
+const API_BASE = ''
+
 const sessionId = ref<string>('')
 const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const messagesEnd = ref<HTMLElement | null>(null)
 
-// 知识库 URL 摄入
 const ingestUrlInput = ref('')
 const ingestLoading = ref(false)
 const ingestSuccess = ref(false)
+const kbPanelOpen = ref(false)
+const kbStatsLoading = ref(false)
+const kbStats = ref<KbStatsData | null>(null)
 
-// 文档上传
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadLoading = ref(false)
+const isStreaming = ref(false)
+const currentAbortController = ref<AbortController | null>(null)
+
+function scrollToBottom(): void {
+  nextTick(() => {
+    messagesEnd.value?.scrollIntoView({ behavior: 'smooth' })
+  })
+}
+
+onMounted(() => {
+  sessionId.value = uuidv4()
+  messages.value = [
+    {
+      id: uuidv4(),
+      role: 'assistant',
+      content: '你好，我是知识库助手。你可以先导入资料，再开始提问。',
+    },
+  ]
+  scrollToBottom()
+})
 
 function handleFileUpload(event: Event): void {
   const target = event.target as HTMLInputElement
@@ -37,13 +71,10 @@ function handleFileUpload(event: Event): void {
   formData.append('file', file)
 
   axios
-    .post<{ code: number; message: string; data?: unknown }>(
-      `${API_BASE}/api/v1/kb/upload`,
-      formData
-    )
+    .post<{ code: number; message: string }>(`${API_BASE}/api/v1/kb/upload`, formData)
     .then(({ data: res }) => {
       if (res.code === 200) {
-        alert('✅ 文档切片已入库！')
+        alert('文档切片已入库')
       } else {
         alert(res.message || '上传失败')
       }
@@ -77,7 +108,9 @@ async function ingestUrl(): Promise<void> {
     if (res.code === 200) {
       ingestSuccess.value = true
       ingestUrlInput.value = ''
-      setTimeout(() => { ingestSuccess.value = false }, 4000)
+      setTimeout(() => {
+        ingestSuccess.value = false
+      }, 4000)
     } else {
       alert(res.message || '摄入失败')
     }
@@ -91,29 +124,48 @@ async function ingestUrl(): Promise<void> {
   }
 }
 
-const scrollToBottom = () => {
-  nextTick(() => {
-    messagesEnd.value?.scrollIntoView({ behavior: 'smooth' })
-  })
+async function fetchKbStats(): Promise<void> {
+  if (kbStatsLoading.value) return
+  kbStatsLoading.value = true
+
+  try {
+    const { data: res } = await axios.get<{
+      code: number
+      message: string
+      data: KbStatsData
+    }>(`${API_BASE}/api/v1/kb/stats`)
+
+    if (res.code === 200) {
+      kbStats.value = res.data
+    } else {
+      alert(res.message || '获取知识库统计失败')
+    }
+  } catch (err: unknown) {
+    const msg = axios.isAxiosError(err)
+      ? err.response?.data?.message || err.message || '网络错误'
+      : String(err)
+    alert(`获取知识库统计失败：${msg}`)
+  } finally {
+    kbStatsLoading.value = false
+  }
 }
 
-onMounted(() => {
-  sessionId.value = uuidv4()
-  messages.value = [
-    {
-      id: uuidv4(),
-      role: 'assistant',
-      content: '你好，我是基于 Spring AI 的概念引擎。你想深入了解《盗作》的动机，还是《幻灯》的隐喻？',
-    },
-  ]
-  scrollToBottom()
-})
+async function toggleKbPanel(): Promise<void> {
+  kbPanelOpen.value = !kbPanelOpen.value
+  if (kbPanelOpen.value) {
+    await fetchKbStats()
+  }
+}
 
-const API_BASE = ''
+function stopGeneration(): void {
+  if (currentAbortController.value) {
+    currentAbortController.value.abort()
+  }
+}
 
 async function sendMessage(): Promise<void> {
   const query = inputText.value.trim()
-  if (!query) return
+  if (!query || isStreaming.value) return
 
   const userMsg: ChatMessage = {
     id: uuidv4(),
@@ -131,10 +183,15 @@ async function sendMessage(): Promise<void> {
   messages.value.push(placeholderMsg)
   scrollToBottom()
 
+  isStreaming.value = true
+  const controller = new AbortController()
+  currentAbortController.value = controller
+
   try {
     const response = await fetch(`${API_BASE}/api/v1/kb/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         sessionId: sessionId.value,
         query,
@@ -143,7 +200,7 @@ async function sendMessage(): Promise<void> {
       }),
     })
 
-    let idx = messages.value.findIndex((m) => m.id === placeholderMsg.id)
+    const idx = messages.value.findIndex((m) => m.id === placeholderMsg.id)
     if (idx === -1) return
 
     if (!response.ok) {
@@ -204,40 +261,48 @@ async function sendMessage(): Promise<void> {
     scrollToBottom()
   } catch (err: unknown) {
     const idx = messages.value.findIndex((m) => m.id === placeholderMsg.id)
-    if (idx !== -1) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      if (idx !== -1 && !messages.value[idx].content.trim()) {
+        messages.value[idx] = {
+          ...messages.value[idx],
+          content: '已停止生成',
+        }
+      }
+    } else if (idx !== -1) {
       messages.value[idx] = {
         ...messages.value[idx],
         content: `请求异常：${err instanceof Error ? err.message : String(err)}`,
       }
     }
     scrollToBottom()
+  } finally {
+    isStreaming.value = false
+    currentAbortController.value = null
   }
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col bg-gray-900 text-gray-200">
-    <!-- Header -->
     <header class="shrink-0 border-b border-gray-700 px-4 py-3">
       <div class="mx-auto flex max-w-4xl items-center justify-between gap-4">
         <h1 class="shrink-0 text-lg font-semibold tracking-wide">Yorushika 概念引擎</h1>
-        <!-- 知识库自动投喂 -->
-        <div class="flex min-w-0 flex-1 max-w-md items-center gap-2">
+        <div class="flex min-w-0 max-w-md flex-1 items-center gap-2">
           <input
             v-model="ingestUrlInput"
             type="text"
-            placeholder="输入 B站/YouTube 链接，给概念引擎喂饭..."
+            placeholder="输入 B 站 / YouTube 链接，导入知识库"
             :disabled="ingestLoading"
-            class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
             @keydown.enter.prevent="ingestUrl()"
           />
           <button
             type="button"
             :disabled="ingestLoading"
-            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-700"
+            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
             @click="ingestUrl()"
           >
-            {{ ingestLoading ? 'Loading... (抓取中)' : '一键摄入 (URL)' }}
+            {{ ingestLoading ? '抓取中...' : '导入 URL' }}
           </button>
           <input
             ref="fileInput"
@@ -249,25 +314,71 @@ async function sendMessage(): Promise<void> {
           <button
             type="button"
             :disabled="uploadLoading"
-            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-700"
+            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
             @click="fileInput?.click()"
           >
-            {{ uploadLoading ? '解析中...' : '📎 上传文档' }}
+            {{ uploadLoading ? '解析中...' : '上传文档' }}
+          </button>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border border-indigo-500 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-gray-900"
+            @click="toggleKbPanel()"
+          >
+            {{ kbPanelOpen ? '收起知识库' : '查看知识库' }}
           </button>
         </div>
       </div>
-      <!-- 摄入成功提示 -->
+
       <Transition name="fade">
-        <p
-          v-if="ingestSuccess"
-          class="mt-2 text-center text-sm font-medium text-emerald-400"
-        >
-          ✅ 语料摄入成功，引擎已进化！
+        <p v-if="ingestSuccess" class="mt-2 text-center text-sm font-medium text-emerald-400">
+          资料导入成功，知识库已更新。
         </p>
       </Transition>
+
+      <div
+        v-if="kbPanelOpen"
+        class="mx-auto mt-3 max-w-4xl rounded-lg border border-gray-700 bg-gray-800/70 p-3"
+      >
+        <div class="mb-2 flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-gray-100">知识库状态</h2>
+          <button
+            type="button"
+            :disabled="kbStatsLoading"
+            class="rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-50"
+            @click="fetchKbStats()"
+          >
+            {{ kbStatsLoading ? '刷新中...' : '刷新' }}
+          </button>
+        </div>
+
+        <div v-if="kbStatsLoading && !kbStats" class="text-sm text-gray-400">加载中...</div>
+
+        <div v-else-if="kbStats" class="space-y-2 text-sm text-gray-200">
+          <p>总切片：{{ kbStats.totalChunks }}，文档数：{{ kbStats.totalDocs }}</p>
+          <div class="max-h-40 overflow-y-auto rounded border border-gray-700">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-gray-700/80 text-gray-300">
+                <tr>
+                  <th class="px-2 py-1">文档</th>
+                  <th class="w-24 px-2 py-1">Chunks</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="doc in kbStats.documents"
+                  :key="doc.docName"
+                  class="border-t border-gray-700"
+                >
+                  <td class="px-2 py-1">{{ doc.docName }}</td>
+                  <td class="px-2 py-1">{{ doc.chunks }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </header>
 
-    <!-- Messages -->
     <main class="flex-1 overflow-y-auto px-4 py-4">
       <div class="mx-auto max-w-2xl space-y-4">
         <div
@@ -275,25 +386,14 @@ async function sendMessage(): Promise<void> {
           :key="msg.id"
           :class="[
             'rounded-lg px-4 py-3',
-            msg.role === 'user'
-              ? 'ml-auto max-w-[85%] bg-gray-700'
-              : 'mr-auto max-w-[90%] bg-gray-800',
+            msg.role === 'user' ? 'ml-auto max-w-[85%] bg-gray-700' : 'mr-auto max-w-[90%] bg-gray-800',
           ]"
         >
           <template v-if="msg.loading">
             <div class="flex items-center gap-2 text-gray-400">
-              <span
-                class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400"
-                style="animation-duration: 1.2s"
-              ></span>
-              <span
-                class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400"
-                style="animation-delay: 0.2s; animation-duration: 1.2s"
-              ></span>
-              <span
-                class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400"
-                style="animation-delay: 0.4s; animation-duration: 1.2s"
-              ></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400"></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400" style="animation-delay: 0.2s"></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400" style="animation-delay: 0.4s"></span>
               <span class="ml-1 text-sm">思考中...</span>
             </div>
           </template>
@@ -310,22 +410,30 @@ async function sendMessage(): Promise<void> {
       </div>
     </main>
 
-    <!-- Input -->
     <footer class="shrink-0 border-t border-gray-700 px-4 py-3">
       <div class="mx-auto flex max-w-2xl gap-2">
         <input
           v-model="inputText"
           type="text"
-          placeholder="输入问题，连接 Spring AI 知识库..."
+          placeholder="输入问题，开始 RAG 对话..."
           class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2.5 text-gray-200 placeholder-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
           @keydown.enter.prevent="sendMessage()"
         />
         <button
           type="button"
+          :disabled="isStreaming"
           class="rounded-lg bg-gray-700 px-4 py-2.5 font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900"
           @click="sendMessage()"
         >
           发送
+        </button>
+        <button
+          type="button"
+          :disabled="!isStreaming"
+          class="rounded-lg bg-red-700 px-4 py-2.5 font-medium text-gray-100 transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-40"
+          @click="stopGeneration()"
+        >
+          停止生成
         </button>
       </div>
     </footer>
@@ -337,6 +445,7 @@ async function sendMessage(): Promise<void> {
 .fade-leave-active {
   transition: opacity 0.3s ease;
 }
+
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
