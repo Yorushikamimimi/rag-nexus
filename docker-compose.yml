@@ -11,14 +11,14 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ragnexus
+      POSTGRES_DB: postgres
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-pgvector.sql:/docker-entrypoint-initdb.d/01-init-vector.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d ragnexus"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -50,14 +50,14 @@ services:
       dockerfile: Dockerfile
     container_name: rag-nexus-java-backend
     environment:
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-vector:5432/ragnexus
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-vector:5432/postgres
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
       SCRAPER_SERVICE_URL: http://python-scraper:8000
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-your-openai-api-key}
-      # 若使用阿里云 DashScope，可覆盖：
-      # AI_API_KEY: ${AI_API_KEY}
-      # SPRING_PROFILES_ACTIVE: docker
+      # 显式启用 docker profile：加载 application-docker.yml，走阿里云 DashScope
+      SPRING_PROFILES_ACTIVE: docker
+      # API Key 必须由宿主机环境变量注入，镜像内不含任何 key
+      AI_API_KEY: ${AI_API_KEY:?请通过环境变量提供 AI_API_KEY（阿里云 DashScope key）}
     ports:
       - "8080:8080"
     depends_on:

@@ -4,7 +4,8 @@ import axios from 'axios'
 import MarkdownIt from 'markdown-it'
 import { v4 as uuidv4 } from 'uuid'
 
-const md = new MarkdownIt({ html: true })
+// html:false 禁止渲染原始 HTML，防止 LLM 输出注入 <script>/恶意标签导致 XSS
+const md = new MarkdownIt({ html: false })
 
 interface ChatMessage {
   id: string

@@ -1,49 +1,18 @@
-import os
-import yt_dlp
+"""
+批量视频元数据语料灌入脚本（本地运行）。
+
+复用 scraper_service 的 yt-dlp 抓取逻辑（_extract_video_metadata），避免重复实现。
+运行方式：在 scripts/ 目录下 `python batch_ingest_agent.py`，需先启动 Spring Boot 后端。
+"""
 import requests
 from datetime import datetime
+
+# 复用微服务的抓取函数（cookies.txt 解析、超时、字幕配置都在那边维护）
+from scraper_service import _extract_video_metadata
 
 # Spring Boot 知识库入库接口
 INGEST_API_URL = "http://localhost:8080/api/v1/kb/ingest"
 
-# cookies.txt 放在项目根目录（scripts/ 的上一级），Netscape 格式
-# B 站 Cookie 仅对 bilibili.com 链接有效，YouTube 需单独导出 YouTube Cookie
-# 参考：docs/archive/cookies.example.txt
-COOKIE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cookies.txt")
-
-
-def fetch_video_metadata(video_url: str) -> dict:
-    """
-    使用 yt-dlp 提取视频元数据和简介。
-    cookies.txt 为 B 站 Cookie 时，仅对 bilibili.com 链接生效；
-    YouTube 需单独导出 YouTube 的 cookie。
-    """
-    print(f"[{datetime.now().time()}] 正在解析节点: {video_url} ...")
-    ydl_opts = {
-        "quiet": True,
-        "skip_download": True,
-        "writesubtitles": True,
-        "subtitleslangs": ["ja", "zh-Hans", "zh"],
-        "extractor_args": {"youtube": {"player_client": ["web", "android"]}},
-        "socket_timeout": 30,
-    }
-    if os.path.isfile(COOKIE_FILE):
-        ydl_opts["cookiefile"] = COOKIE_FILE
-
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(video_url, download=False)
-            return {
-                "title": info_dict.get('title', 'Unknown Title'),
-                "description": info_dict.get('description', ''),
-                "uploader": info_dict.get('uploader', 'unknown')
-            }
-    except yt_dlp.utils.DownloadError as e:
-        print(f"[{datetime.now().time()}] yt-dlp 抓取失败 (可能要求登录/验证): {e}")
-        raise
-    except Exception as e:
-        print(f"[{datetime.now().time()}] 解析异常: {e}")
-        raise
 
 def ingest_to_knowledge_base(lore_data: dict) -> bool:
     """
@@ -80,9 +49,10 @@ def ingest_to_knowledge_base(lore_data: dict) -> bool:
         print(f"❌ 入库响应解析异常: {e}")
         return False
 
+
 if __name__ == "__main__":
     # 支持 YouTube 与 B 站
-    # 如需 B 站登录态，请将 cookies.txt（Netscape 格式）放在项目根目录
+    # 如需 B 站登录态，请将 cookies.txt（Netscape 格式）放在 scripts/ 目录下
     target_urls = [
         # B 站示例（替换为目标视频链接）
         "https://www.bilibili.com/video/BV1oz4BzWEtu",
@@ -92,8 +62,14 @@ if __name__ == "__main__":
 
     print("🚀 启动批量视频元数据语料灌入...")
     for url in target_urls:
-        lore = fetch_video_metadata(url)
-        if lore['description']:
+        try:
+            data = _extract_video_metadata(url)
+            lore = {"title": data.title, "description": data.description, "uploader": data.uploader}
+        except Exception as e:
+            print(f"[{datetime.now().time()}] ❌ 抓取失败 {url}: {e}")
+            continue
+
+        if lore["description"]:
             ingest_to_knowledge_base(lore)
         else:
-            print(f"⚠️ 警告: 未抓取到 {lore['title']} 的有效文本内容，跳过。")
+            print(f"⚠️ 警告: 未抓取到《{lore['title']}》的有效文本内容，跳过。")

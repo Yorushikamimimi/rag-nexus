@@ -1,0 +1,27 @@
+# Docker 部署专用 profile。docker-compose.yml 设置 SPRING_PROFILES_ACTIVE=docker 时加载。
+# 与 application-local.yml 的区别：所有敏感值强制走环境变量，不内联任何 key，
+# 避免被打进镜像泄露。默认走阿里云 DashScope（qwen-plus + text-embedding-v2）。
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres-vector:5432/postgres}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
+  ai:
+    openai:
+      # 末尾不带 /v1，Spring AI 自动拼接
+      base-url: ${AI_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      # 必须由环境变量注入，无 default；缺失时 Spring AI 调用直接 401
+      api-key: ${AI_API_KEY:}
+      chat:
+        options:
+          model: ${AI_CHAT_MODEL:qwen-plus}
+          temperature: 0.3
+      embedding:
+        options:
+          model: text-embedding-v2
+    vectorstore:
+      pgvector:
+        index-type: HNSW
+        distance-type: COSINE_DISTANCE
+        dimensions: 1536
+        initialize-schema: true

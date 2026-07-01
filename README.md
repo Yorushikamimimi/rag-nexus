@@ -24,6 +24,10 @@
 
 适合用于：个人知识库搭建、技术探索、RAG 实现学习参考。
 
+> ⚠️ **安全警告**：本项目**所有 API 完全开放，无任何认证 / 鉴权 / 限流**，且全局异常处理已脱敏但仍非生产级。
+> 仅限**本地或可信内网**运行。若需公网访问，请自行在前面加一层反向代理鉴权（nginx basic auth / API gateway / OAuth），
+> 切勿将 8080 端口直接暴露到公网，否则任何人都能消耗你的 LLM 配额或篡改知识库。
+
 ---
 
 ## 核心功能
@@ -324,7 +328,6 @@ rag-nexus/
 │   └── batch_ingest_agent.py         # 批量视频语料灌入脚本（本地运行）
 ├── docs/
 │   ├── DECISIONS.md                  # 架构决策记录
-│   ├── CHANGES.md                    # 变更日志
 │   └── archive/                      # 归档文件（数据迁移备份等）
 ├── docker-compose.yml                # 4 服务编排
 ├── Dockerfile                        # Spring Boot 多阶段构建

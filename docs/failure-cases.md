@@ -211,6 +211,8 @@ LLM 的预训练知识和 Prompt 中的检索片段同时存在于上下文窗�
 - 引入 Faithfulness 评估（如 RAGAS 框架）自动检测回答与检索片段的一致性
 - 对召回结果展示相似度分数，让用户在 UI 侧感知知识库覆盖情况
 
+> 注：流式 `normalizeGarbledAnswer()` 逐 chunk 在 token 粒度运行，正则模式跨 chunk 边界会失效，实际清洗能力有限。**当前版本接受为已知限制，不做硬修**；根因治理需在累积完整回答后再清洗，或引入 RAGAS 类评估。
+
 ---
 
 ## Failure Case 7：测试覆盖不足，Service 层质量依赖人工验证
