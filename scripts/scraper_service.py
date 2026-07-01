@@ -93,6 +93,9 @@ def extract_video(request: ExtractRequest) -> ApiResponse:
     url = request.url.strip()
     if not url:
         return ApiResponse(code=400, message="url 不能为空", data=None)
+    # SSRF 防护：只允许 http/https，拒绝 file://、内网地址等
+    if not (url.startswith("http://") or url.startswith("https://")):
+        return ApiResponse(code=400, message="仅支持 http/https 链接", data=None)
 
     try:
         data = _extract_video_metadata(url)

@@ -10,7 +10,7 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -42,13 +42,13 @@ class KbControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @MockBean
+    @MockitoBean
     private KbIngestionService kbIngestionService;
 
-    @MockBean
+    @MockitoBean
     private KbQueryService kbQueryService;
 
-    @MockBean
+    @MockitoBean
     private RagChatService ragChatService;
 
     // ────────────────────────────────────────────────────────────────────────
@@ -120,15 +120,16 @@ class KbControllerTest {
     }
 
     @Test
-    @DisplayName("GET /stats - Service 抛异常：Controller catch 包装，HTTP 200，code=500")
-    void stats_serviceThrows_returnsWrappedFailResult() throws Exception {
+    @DisplayName("GET /stats - Service 抛异常：冒泡到 GlobalExceptionHandler，HTTP 5xx，脱敏 message")
+    void stats_serviceThrows_returns5xx() throws Exception {
         when(kbQueryService.getStats()).thenThrow(new RuntimeException("pgvector 连接超时"));
 
         mockMvc.perform(get("/api/v1/kb/stats"))
                 .andDo(print())
-                .andExpect(status().isOk())
+                .andExpect(status().is5xxServerError())
                 .andExpect(jsonPath("$.code").value(500))
-                .andExpect(jsonPath("$.message").value(containsString("pgvector 连接超时")));
+                // message 已脱敏，不再回传原始异常文本
+                .andExpect(jsonPath("$.message").value(containsString("服务器内部错误")));
     }
 
     // ────────────────────────────────────────────────────────────────────────

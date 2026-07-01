@@ -22,6 +22,8 @@ import java.util.Map;
 
 /**
  * 知识库 REST：注入 + RAG 对话。表结构采用 Spring AI 默认 vector_store，元数据存 Document.metadata。
+ * <p>异常策略统一交由 {@link com.ragnexus.kb.common.GlobalExceptionHandler} 处理：
+ * 参数校验失败 → HTTP 400，Service 抛异常 → HTTP 500（脱敏 message）。Controller 不再自行 try/catch。
  */
 @Slf4j
 @RestController
@@ -37,66 +39,45 @@ public class KbController {
     @Operation(summary = "知识库注入", description = "接收文本，分块后写入 vector_store，元数据写入 Document.metadata")
     @PostMapping(value = "/ingest", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<Map<String, Object>> ingest(@Valid @RequestBody KbIngestRequest request) {
-        try {
-            int chunks = kbIngestionService.ingest(request);
-            return Result.ok(Map.of(
-                    "docName", request.getDocName(),
-                    "chunksCreated", chunks
-            ));
-        } catch (Exception e) {
-            log.warn("ingest failed: {}", e.getMessage());
-            return Result.fail("知识库注入失败: " + e.getMessage());
-        }
+        int chunks = kbIngestionService.ingest(request);
+        return Result.ok(Map.of(
+                "docName", request.getDocName(),
+                "chunksCreated", chunks
+        ));
     }
 
     @Operation(summary = "URL 注入", description = "调用外部爬虫服务抓取 URL 内容，分块后写入 vector_store")
     @PostMapping(value = "/ingest/url", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<Map<String, Object>> ingestFromUrl(@Valid @RequestBody KbIngestUrlRequest request) {
-        try {
-            int chunks = kbIngestionService.ingestFromUrl(request.getUrl());
-            return Result.ok(Map.of(
-                    "url", request.getUrl(),
-                    "chunksCreated", chunks
-            ));
-        } catch (Exception e) {
-            log.warn("ingestFromUrl failed: {}", e.getMessage());
-            return Result.fail(e.getMessage());
-        }
+        int chunks = kbIngestionService.ingestFromUrl(request.getUrl());
+        return Result.ok(Map.of(
+                "url", request.getUrl(),
+                "chunksCreated", chunks
+        ));
     }
 
     @Operation(summary = "文件上传注入", description = "上传本地多模态文档（PDF、DOC、PPT 等），使用 Tika 解析后分块入库")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
-        try {
-            if (file == null || file.isEmpty()) {
-                return Result.fail("请选择要上传的文件");
-            }
-            int chunks = kbIngestionService.ingestFromFile(file);
-            return Result.ok(Map.of(
-                    "filename", file.getOriginalFilename(),
-                    "chunksCreated", chunks
-            ));
-        } catch (Exception e) {
-            log.warn("upload failed: {}", e.getMessage());
-            return Result.fail("文件注入失败: " + e.getMessage());
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("请选择要上传的文件");
         }
+        int chunks = kbIngestionService.ingestFromFile(file);
+        return Result.ok(Map.of(
+                "filename", file.getOriginalFilename(),
+                "chunksCreated", chunks
+        ));
     }
 
     @Operation(summary = "RAG 智能对话", description = "相似度检索 Top-K 切片，拼装 System Prompt 后调用 LLM 生成回答")
     @PostMapping(value = "/chat", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<KbChatResponse> chat(@Valid @RequestBody KbChatRequest request) {
-        KbChatResponse data = ragChatService.chat(request);
-        return Result.ok(data);
+        return Result.ok(ragChatService.chat(request));
     }
 
     @GetMapping(value = "/stats", produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<Map<String, Object>> stats() {
-        try {
-            return Result.ok(kbQueryService.getStats());
-        } catch (Exception e) {
-            log.warn("stats failed: {}", e.getMessage());
-            return Result.fail("获取知识库统计失败: " + e.getMessage());
-        }
+        return Result.ok(kbQueryService.getStats());
     }
 
     @Operation(summary = "RAG 流式对话", description = "SSE 流式输出，实时推送 LLM 生成内容，降低首字延迟")

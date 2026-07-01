@@ -27,10 +27,18 @@ public class GlobalExceptionHandler {
         return Result.fail(400, message);
     }
 
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(IllegalArgumentException.class)
+    public Result<Void> handleIllegalArgument(IllegalArgumentException ex) {
+        log.warn("非法参数: {}", ex.getMessage());
+        return Result.fail(400, ex.getMessage());
+    }
+
     @ResponseStatus(HttpStatus.INTERNAL_SERVER_ERROR)
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception ex) {
-        log.error("未捕获异常: {}", ex.getMessage(), ex);
-        return Result.fail("服务器内部错误: " + ex.getMessage());
+        // 不回传 ex.getMessage()，避免 SQL/堆栈/内部细节泄露给客户端；详情只进日志
+        log.error("未捕获异常", ex);
+        return Result.fail(500, "服务器内部错误，请查看后端日志");
     }
 }

@@ -7,7 +7,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 /**
@@ -28,14 +27,12 @@ public class KbIngestRequest {
     @Schema(description = "原始文本内容", requiredMode = Schema.RequiredMode.REQUIRED)
     private String content;
 
-    @NotNull
     @Positive
     @Schema(description = "分块大小（token 数）", example = "500", defaultValue = "500")
     @Builder.Default
     private Integer chunkSize = 500;
 
-    @NotNull
-    @Schema(description = "块间重叠（token 数）", example = "50", defaultValue = "50")
+    @Schema(description = "块间重叠（token 数，当前 splitter 未读取，属已知限制）", example = "50", defaultValue = "50")
     @Builder.Default
     private Integer overlap = 50;
 

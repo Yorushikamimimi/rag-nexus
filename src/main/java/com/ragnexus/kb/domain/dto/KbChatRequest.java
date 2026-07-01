@@ -6,8 +6,9 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 
 /**
@@ -27,12 +28,13 @@ public class KbChatRequest {
     @Schema(description = "用户问题", example = "请结合知识库，分析《思想犯》这首歌想传达的核心情感？", requiredMode = Schema.RequiredMode.REQUIRED)
     private String query;
 
-    @NotNull
     @Positive
     @Schema(description = "召回 Top-K 条相关切片", example = "3", defaultValue = "3")
     @Builder.Default
     private Integer topK = 3;
 
+    @DecimalMin(value = "0.0", message = "temperature 不能小于 0")
+    @DecimalMax(value = "2.0", message = "temperature 不能大于 2")
     @Schema(description = "LLM 温度", example = "0.3", defaultValue = "0.3")
     @Builder.Default
     private Double temperature = 0.3;

@@ -4,56 +4,18 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor;
 import org.springframework.ai.chat.memory.ChatMemory;
 import org.springframework.ai.chat.model.ChatModel;
-import org.springframework.ai.model.tool.DefaultToolCallingManager;
-import org.springframework.ai.openai.OpenAiChatModel;
-import org.springframework.ai.openai.OpenAiChatOptions;
-import org.springframework.ai.openai.api.OpenAiApi;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-import org.springframework.retry.support.RetryTemplate;
-
-import io.micrometer.observation.ObservationRegistry;
 
 /**
- * 显式注册 ChatModel + ChatClient。兼容自定义 base-url（如阿里云 DashScope），
- * 当自动配置未创建 ChatModel 时由本类提供，确保 RagChatService 能注入 ChatClient。
+ * ChatClient 显式注册：组合 ChatModel（由 spring-ai-starter-model-openai 自动配置，
+ * 适配阿里云 DashScope 等 OpenAI 兼容端点）+ ChatMemory（多轮对话）。
+ * <p>ChatModel / EmbeddingModel 不再手搓，避免与 starter 自动配置冲突或冗余。
+ * base-url / api-key / model 全部走 application-*.yml 的 spring.ai.openai.* 属性。
  */
 @Configuration
 public class AiConfig {
-
-    @Value("${spring.ai.openai.api-key:}")
-    private String apiKey;
-
-    @Value("${spring.ai.openai.base-url:https://api.openai.com}")
-    private String baseUrl;
-
-    @Value("${spring.ai.openai.chat.options.model:gpt-4o-mini}")
-    private String model;
-
-    @Value("${spring.ai.openai.chat.options.temperature:0.3}")
-    private double temperature;
-
-    @Bean
-    @Primary
-    @ConditionalOnMissingBean(ChatModel.class)
-    public ChatModel chatModel() {
-        OpenAiApi api = OpenAiApi.builder()
-                .baseUrl(baseUrl)
-                .apiKey(apiKey)
-                .build();
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .model(model)
-                .temperature(temperature)
-                .build();
-        ObservationRegistry observationRegistry = ObservationRegistry.create();
-        return new OpenAiChatModel(api, options,
-                DefaultToolCallingManager.builder().build(),
-                new RetryTemplate(),
-                observationRegistry);
-    }
 
     @Bean
     @ConditionalOnMissingBean(ChatClient.class)
