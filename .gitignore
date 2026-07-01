@@ -32,3 +32,6 @@ rag-nexus-web/dist/
 rag-nexus-web/node_modules/
 rag-nexus-web/*.tsbuildinfo
 rag-nexus-web/vite.config.d.ts
+
+# 本地数据库备份（不入库，保留在本地）
+rag-nexus-db-backup.sql
