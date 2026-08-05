@@ -5,8 +5,8 @@
 - **本次改动状态**：工作区已改，**尚未 commit**（等用户确认）
 - **审查来源**：上一轮全方位审查报告（3 Critical + 8 Important + 10 Minor = 21 项）
 
-> 路径事件：会话期间发现 `/Users/yang/Workspace/cursor_projects/rag-nexus` 是断链空壳，
-> **真实项目在 `/Users/yang/Workspace/SelfProject/cursor_projects/rag-nexus`**（`.git` 完好）。
+> 路径事件：会话期间发现旧分类目录下的同名目录是断链空壳，
+> **真实项目在 `/Users/yang/Workspace/SelfProject/rag-nexus`**（`.git` 完好）。
 > 本轮所有改动最终均落在真实路径并已逐一复审。空壳目录已清理。
 
 ---
