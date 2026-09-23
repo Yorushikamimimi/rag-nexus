@@ -103,6 +103,7 @@ public class RagChatService {
                     .advisors(a -> a.param(ChatMemory.CONVERSATION_ID, sessionId))
                     .stream()
                     .content()
+                    .filter(chunk -> chunk != null && !chunk.isBlank())
                     .map(chunk -> normalizeGarbledAnswer(chunk, query));
         } catch (Exception e) {
             log.error("RagChatService.streamChat failed: query={}", query, e);
