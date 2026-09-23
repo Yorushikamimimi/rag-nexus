@@ -21,11 +21,11 @@ import jakarta.validation.constraints.Positive;
 @Schema(description = "RAG 智能对话请求")
 public class KbChatRequest {
 
-    @Schema(description = "会话 ID，用于多轮对话上下文", example = "yorushika-session-001")
+    @Schema(description = "会话 ID，用于多轮对话上下文", example = "employee-handbook-session-001")
     private String sessionId;
 
     @NotBlank(message = "query 不能为空")
-    @Schema(description = "用户问题", example = "请结合知识库，分析《思想犯》这首歌想传达的核心情感？", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "用户问题", example = "员工手册中规定的年假申请流程是什么？", requiredMode = Schema.RequiredMode.REQUIRED)
     private String query;
 
     @Positive

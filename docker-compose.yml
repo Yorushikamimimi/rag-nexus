@@ -26,23 +26,7 @@ services:
     networks:
       - rag-nexus-net
 
-  # 2. Python 抓取微服务
-
-  python-scraper:
-    build:
-      context: .
-      dockerfile: Dockerfile.python
-    container_name: rag-nexus-python-scraper
-    ports:
-      - "8000:8000"
-    # 可选：挂载 cookies.txt 以提升 B 站抓取成功率
-    # 格式参考：docs/archive/cookies.example.txt（请勿提交真实 cookie 文件）
-    # volumes:
-    #   - ./cookies.txt:/app/cookies.txt:ro
-    networks:
-      - rag-nexus-net
-
-  # 3. Spring Boot Java 后端
+  # 2. Spring Boot Java 后端
 
   java-backend:
     build:
@@ -53,7 +37,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres-vector:5432/postgres
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: postgres
-      SCRAPER_SERVICE_URL: http://python-scraper:8000
       # 显式启用 docker profile：加载 application-docker.yml，走阿里云 DashScope
       SPRING_PROFILES_ACTIVE: docker
       # API Key 必须由宿主机环境变量注入，镜像内不含任何 key
@@ -66,7 +49,7 @@ services:
     networks:
       - rag-nexus-net
 
-  # 4. Vue 3 前端（Nginx）
+  # 3. Vue 3 前端（Nginx）
 
   vue-frontend:
     build:

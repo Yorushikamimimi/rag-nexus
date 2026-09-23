@@ -1,4 +1,4 @@
-# Yorushika Spring Boot 后端 - 多阶段构建
+# RAG 知识库后端 - 多阶段构建
 # ========== Build 阶段 ==========
 FROM maven:3.9-eclipse-temurin-17 AS builder
 

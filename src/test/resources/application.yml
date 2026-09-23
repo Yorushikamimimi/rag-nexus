@@ -15,7 +15,3 @@ spring:
     vectorstore:
       pgvector:
         initialize-schema: false
-
-scraper:
-  service:
-    url: http://localhost:8000

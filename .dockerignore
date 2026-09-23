@@ -9,8 +9,17 @@
 
 # Build 产物
 target
-rag-nexus-web/node_modules
-rag-nexus-web/dist
+rag-nexus-web
+
+# 后端镜像只复制 pom.xml 和 src
+docs
+examples
+scripts
+tests
+skills
+.github
+rag-nexus-db-backup.sql
+init-pgvector.sql
 
 # 文档
 *.md
@@ -25,3 +34,4 @@ docker-compose*
 *.log
 .env
 .env.*
+application-local.yml

@@ -6,11 +6,6 @@ server:
       force: true
       charset: UTF-8
 
-# 抓取微服务地址（Docker 编排时通过 SCRAPER_SERVICE_URL 注入 http://python-scraper:8000）
-scraper:
-  service:
-    url: ${SCRAPER_SERVICE_URL:http://127.0.0.1:8000}
-
 spring:
   profiles:
     active: local   # 显式激活 local，加载 application-local.yml（数据库密码、OpenAI Key 等）
@@ -21,7 +16,7 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
-  # 本地覆盖：复制 application-local.yml.example 为 application-local.yml 并填写实际密码
+  # 本地覆盖：按 README 创建被忽略的 application-local.yml
   ai:
     vectorstore:
       pgvector:

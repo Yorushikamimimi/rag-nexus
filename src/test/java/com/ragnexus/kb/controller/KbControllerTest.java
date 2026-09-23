@@ -31,7 +31,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * KbController MVC 切片测试。
  *
- * <p>使用 @WebMvcTest 仅加载 Web 层，通过 @MockBean 隔离所有外部依赖（pgvector / LLM / 爬虫服务）。
+ * <p>使用 @WebMvcTest 仅加载 Web 层，通过测试替身隔离 pgvector 与 LLM 依赖。
  * 验证：接口路由、@Valid 参数校验、统一 Result 响应结构、Service 异常的容错包装。
  */
 @WebMvcTest(controllers = KbController.class)
@@ -61,13 +61,13 @@ class KbControllerTest {
     @DisplayName("POST /chat - 正常请求：返回 code=200，data 包含 answer 与 citations")
     void chat_validRequest_returnsOkWithAnswer() throws Exception {
         KbChatResponse mockResp = KbChatResponse.builder()
-                .answer("春泥保护着花，是一种轮回的温柔。")
-                .citations(List.of("yorushika_lyrics.md"))
+                .answer("社区活动将在周六上午举行。")
+                .citations(List.of("社区活动.md"))
                 .build();
         when(ragChatService.chat(any(KbChatRequest.class))).thenReturn(mockResp);
 
         KbChatRequest request = KbChatRequest.builder()
-                .query("春泥守护花是什么意思？")
+                .query("社区活动什么时候举行？")
                 .topK(3)
                 .temperature(0.3)
                 .build();
@@ -79,8 +79,8 @@ class KbControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.message").value("success"))
-                .andExpect(jsonPath("$.data.answer").value("春泥保护着花，是一种轮回的温柔。"))
-                .andExpect(jsonPath("$.data.citations[0]").value("yorushika_lyrics.md"));
+                .andExpect(jsonPath("$.data.answer").value("社区活动将在周六上午举行。"))
+                .andExpect(jsonPath("$.data.citations[0]").value("社区活动.md"));
     }
 
     @Test
@@ -179,10 +179,9 @@ class KbControllerTest {
 
         String body = """
                 {
-                  "docName": "春泥.md",
-                  "content": "春泥保护着花，是生命的轮回。",
-                  "chunkSize": 500,
-                  "overlap": 50
+                  "docName": "社区活动.md",
+                  "content": "社区活动安排说明：活动将在周六上午举行。",
+                  "chunkSize": 500
                 }
                 """;
 
@@ -192,7 +191,7 @@ class KbControllerTest {
                 .andDo(print())
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(200))
-                .andExpect(jsonPath("$.data.docName").value("春泥.md"))
+                .andExpect(jsonPath("$.data.docName").value("社区活动.md"))
                 .andExpect(jsonPath("$.data.chunksCreated").value(8));
     }
 
@@ -218,8 +217,7 @@ class KbControllerTest {
         String body = """
                 {
                   "content": "内容不能没有文档名",
-                  "chunkSize": 500,
-                  "overlap": 50
+                  "chunkSize": 500
                 }
                 """;
 
@@ -229,5 +227,16 @@ class KbControllerTest {
                 .andDo(print())
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value(400));
+    }
+
+    @Test
+    @DisplayName("POST /ingest/url - 路由已移除且未调用注入服务")
+    void ingestUrl_removedRoute_returnsNotFound() throws Exception {
+        mockMvc.perform(post("/api/v1/kb/ingest/url")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"url\":\"https://example.com/article\"}"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value(404));
+        org.mockito.Mockito.verifyNoInteractions(kbIngestionService);
     }
 }

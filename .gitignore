@@ -6,17 +6,17 @@ target/
 *.war
 *.iml
 .idea/
-# Maven 本地缓存（IDE/CI 自动生成，不入库）
+# Maven 本地缓存
 .m2repo/
 
 # 日志
 *.log
 
-# 敏感配置（需手动创建，参考 LOCAL_DEV_README.md 或 DEVELOPMENT.md）
+# 本地敏感配置
 .env
 application-local.yml
 
-# B 站/YouTube 登录 Cookie（参考格式：docs/archive/cookies.example.txt）
+# 登录 Cookie
 cookies.txt
 
 # Python
@@ -24,7 +24,7 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Cursor AI 工具配置（不属于项目业务代码）
+# AI 工具配置
 skills/
 
 # 前端构建产物
@@ -32,6 +32,7 @@ rag-nexus-web/dist/
 rag-nexus-web/node_modules/
 rag-nexus-web/*.tsbuildinfo
 rag-nexus-web/vite.config.d.ts
+rag-nexus-web/vite.config.js
 
 # 本地数据库备份（不入库，保留在本地）
 rag-nexus-db-backup.sql

@@ -1,4 +1,4 @@
-# Yorushika Vue 3 前端 - 多阶段构建
+# RAG 知识库 Web 前端 - 多阶段构建
 # ========== Build 阶段 ==========
 FROM node:18-alpine AS builder
 

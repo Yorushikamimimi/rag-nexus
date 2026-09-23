@@ -20,7 +20,7 @@ import jakarta.validation.constraints.Positive;
 public class KbIngestRequest {
 
     @NotBlank(message = "docName 不能为空")
-    @Schema(description = "文档名称", example = "思想犯_Lyrics_Analysis.md", requiredMode = Schema.RequiredMode.REQUIRED)
+    @Schema(description = "文档名称", example = "employee-handbook.md", requiredMode = Schema.RequiredMode.REQUIRED)
     private String docName;
 
     @NotBlank(message = "content 不能为空")
@@ -32,15 +32,11 @@ public class KbIngestRequest {
     @Builder.Default
     private Integer chunkSize = 500;
 
-    @Schema(description = "块间重叠（token 数，当前 splitter 未读取，属已知限制）", example = "50", defaultValue = "50")
-    @Builder.Default
-    private Integer overlap = 50;
-
-    @Schema(description = "作者", example = "n-buna", defaultValue = "System")
+    @Schema(description = "作者", example = "Knowledge Base", defaultValue = "System")
     @Builder.Default
     private String author = "System";
 
-    @Schema(description = "来源类型", example = "MARKDOWN", defaultValue = "TXT")
+    @Schema(description = "来源类型", example = "TXT", defaultValue = "TXT")
     @Builder.Default
     private String sourceType = "TXT";
 }

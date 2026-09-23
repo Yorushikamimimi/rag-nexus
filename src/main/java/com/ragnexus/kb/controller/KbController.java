@@ -4,7 +4,6 @@ import com.ragnexus.kb.common.Result;
 import com.ragnexus.kb.domain.dto.KbChatRequest;
 import com.ragnexus.kb.domain.dto.KbChatResponse;
 import com.ragnexus.kb.domain.dto.KbIngestRequest;
-import com.ragnexus.kb.domain.dto.KbIngestUrlRequest;
 import com.ragnexus.kb.service.KbIngestionService;
 import com.ragnexus.kb.service.KbQueryService;
 import com.ragnexus.kb.service.RagChatService;
@@ -46,17 +45,7 @@ public class KbController {
         ));
     }
 
-    @Operation(summary = "URL 注入", description = "调用外部爬虫服务抓取 URL 内容，分块后写入 vector_store")
-    @PostMapping(value = "/ingest/url", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-    public Result<Map<String, Object>> ingestFromUrl(@Valid @RequestBody KbIngestUrlRequest request) {
-        int chunks = kbIngestionService.ingestFromUrl(request.getUrl());
-        return Result.ok(Map.of(
-                "url", request.getUrl(),
-                "chunksCreated", chunks
-        ));
-    }
-
-    @Operation(summary = "文件上传注入", description = "上传本地多模态文档（PDF、DOC、PPT 等），使用 Tika 解析后分块入库")
+    @Operation(summary = "文件上传注入", description = "上传文件，通过 Tika 提取文本后分块入库")
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
     public Result<Map<String, Object>> upload(@RequestParam("file") MultipartFile file) {
         if (file == null || file.isEmpty()) {
