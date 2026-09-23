@@ -8,7 +8,7 @@
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688?style=flat-square&logo=fastapi)](https://fastapi.tiangolo.com/)
 [![pgvector](https://img.shields.io/badge/pgvector-HNSW-336791?style=flat-square&logo=postgresql)](https://github.com/pgvector/pgvector)
 [![License](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-6%20passed-brightgreen?style=flat-square&logo=junit5)](src/test/java/com/ragnexus/kb/controller/KbControllerTest.java)
+[![Tests](https://img.shields.io/badge/Tests-6%20controller%20tests-blue?style=flat-square&logo=junit5)](src/test/java/com/ragnexus/kb/controller/KbControllerTest.java)
 
 **基于 Spring AI + pgvector 的全栈 RAG 知识库问答系统**
 
@@ -55,8 +55,11 @@
 | OCR | 仅支持含文本层的 PDF，扫描件 / 图片 PDF 无法解析 |
 | 权限与认证 | 所有 API 当前完全开放，无 Spring Security |
 | 持久化会话历史 | 会话记忆为内存级别，后端重启后丢失 |
-| 自动化测试 | Controller 切片测试（`@WebMvcTest` + Mockito）：6 用例，覆盖参数校验、`Result<T>` 包装、异常容错；无需外部服务，`mvn test` 直接运行 |
 | 监控与可观测性 | 无 Prometheus / 链路追踪等配置 |
+
+### 测试覆盖
+
+仓库目前包含 6 个 Controller 层 `@WebMvcTest` 切片测试，通过 Mockito 隔离后端服务依赖，覆盖请求校验、响应包装及异常响应。2026-09-23 本次审查执行 `mvn -o test`：6 个测试通过（0 失败、0 错误、0 跳过）。这些测试没有覆盖真实数据库、LLM、爬虫服务或完整 RAG 链路的端到端流程。
 
 ---
 
@@ -187,14 +190,14 @@ Spring AI 默认对接 OpenAI，项目通过 `AiConfig.java` 显式构建 `OpenA
 
 ### 方式一：Docker Compose（推荐）
 
-**前置条件：** Docker，阿里云 DashScope API Key 或 OpenAI API Key
+**前置条件：** Docker Compose、阿里云 DashScope API Key。当前 Compose 启用 `docker` profile，默认配置为 DashScope Compatible Mode、`qwen-plus` 和 `text-embedding-v2`；本启动示例不代表已验证其他 OpenAI-compatible 服务商的接入。
 
 ```bash
-git clone https://github.com/your-username/rag-nexus.git
+git clone https://github.com/Yorushikamimimi/rag-nexus.git
 cd rag-nexus
 
-# 设置 API Key（使用阿里云 DashScope 则改为 AI_API_KEY）
-export OPENAI_API_KEY=sk-xxx
+# docker-compose.yml 要求宿主机提供 AI_API_KEY
+export AI_API_KEY="YOUR_DASHSCOPE_API_KEY"
 
 docker-compose up -d --build
 ```
