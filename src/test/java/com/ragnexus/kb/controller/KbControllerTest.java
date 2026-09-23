@@ -134,6 +134,40 @@ class KbControllerTest {
                 .andExpect(jsonPath("$.message").value(containsString("服务器内部错误")));
     }
 
+    @Test
+    @DisplayName("GET /chunks - 返回已入库文本预览及顺序边界")
+    void chunkPreview_returnsPreview() throws Exception {
+        when(kbQueryService.getChunkPreview("河岸活动.md")).thenReturn(Map.of(
+                "docName", "河岸活动.md",
+                "found", true,
+                "totalChunks", 1,
+                "displayedChunks", 1,
+                "maxChunks", 50,
+                "maxCharactersPerChunk", 1200,
+                "truncated", false,
+                "orderingNote", "无法还原原文顺序",
+                "chunks", List.of(Map.of(
+                        "text", "合成活动资料",
+                        "truncated", false,
+                        "characterCount", 6
+                ))
+        ));
+
+        mockMvc.perform(get("/api/v1/kb/chunks").param("docName", "河岸活动.md"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.found").value(true))
+                .andExpect(jsonPath("$.data.chunks[0].text").value("合成活动资料"))
+                .andExpect(jsonPath("$.data.orderingNote").value(containsString("无法还原原文顺序")));
+    }
+
+    @Test
+    @DisplayName("GET /chunks - 未提供文件名时返回 HTTP 400")
+    void chunkPreview_missingDocName_returnsBadRequest() throws Exception {
+        mockMvc.perform(get("/api/v1/kb/chunks"))
+                .andExpect(status().isBadRequest());
+    }
+
     // ────────────────────────────────────────────────────────────────────────
     // POST /api/v1/kb/ingest
     // ────────────────────────────────────────────────────────────────────────

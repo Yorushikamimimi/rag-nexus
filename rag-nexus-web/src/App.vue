@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import axios from 'axios'
 import MarkdownIt from 'markdown-it'
 import { v4 as uuidv4 } from 'uuid'
@@ -25,6 +25,24 @@ interface KbStatsData {
   documents: KbDocStat[]
 }
 
+interface KbChunkPreviewItem {
+  text: string
+  truncated: boolean
+  characterCount: number
+}
+
+interface KbChunkPreviewData {
+  docName: string
+  found: boolean
+  totalChunks: number
+  displayedChunks: number
+  maxChunks: number
+  maxCharactersPerChunk: number
+  truncated: boolean
+  orderingNote: string
+  chunks: KbChunkPreviewItem[]
+}
+
 const API_BASE = ''
 
 const sessionId = ref<string>('')
@@ -32,17 +50,25 @@ const messages = ref<ChatMessage[]>([])
 const inputText = ref('')
 const messagesEnd = ref<HTMLElement | null>(null)
 
-const ingestUrlInput = ref('')
-const ingestLoading = ref(false)
-const ingestSuccess = ref(false)
 const kbPanelOpen = ref(false)
 const kbStatsLoading = ref(false)
 const kbStats = ref<KbStatsData | null>(null)
+const kbStatsError = ref('')
+const previewDocName = ref('')
+const chunkPreviewLoading = ref(false)
+const chunkPreviewError = ref('')
+const chunkPreview = ref<KbChunkPreviewData | null>(null)
+const previewCharacterCount = computed(() =>
+  chunkPreview.value?.chunks.reduce((total, chunk) => total + Array.from(chunk.text).length, 0) ?? 0,
+)
+const hasTruncatedChunk = computed(() => chunkPreview.value?.chunks.some((chunk) => chunk.truncated) ?? false)
 
 const fileInput = ref<HTMLInputElement | null>(null)
 const uploadLoading = ref(false)
 const isStreaming = ref(false)
 const currentAbortController = ref<AbortController | null>(null)
+let kbStatsRequestId = 0
+let chunkPreviewRequestId = 0
 
 function scrollToBottom(): void {
   nextTick(() => {
@@ -73,8 +99,11 @@ function handleFileUpload(event: Event): void {
 
   axios
     .post<{ code: number; message: string }>(`${API_BASE}/api/v1/kb/upload`, formData)
-    .then(({ data: res }) => {
+    .then(async ({ data: res }) => {
       if (res.code === 200) {
+        if (kbPanelOpen.value) {
+          await fetchKbStats()
+        }
         alert('文档切片已入库')
       } else {
         alert(res.message || '上传失败')
@@ -92,42 +121,10 @@ function handleFileUpload(event: Event): void {
     })
 }
 
-async function ingestUrl(): Promise<void> {
-  const url = ingestUrlInput.value.trim()
-  if (!url || ingestLoading.value) return
-
-  ingestLoading.value = true
-  ingestSuccess.value = false
-
-  try {
-    const { data: res } = await axios.post<{
-      code: number
-      message: string
-      data: { url: string; chunksCreated: number } | null
-    }>(`${API_BASE}/api/v1/kb/ingest/url`, { url })
-
-    if (res.code === 200) {
-      ingestSuccess.value = true
-      ingestUrlInput.value = ''
-      setTimeout(() => {
-        ingestSuccess.value = false
-      }, 4000)
-    } else {
-      alert(res.message || '摄入失败')
-    }
-  } catch (err: unknown) {
-    const msg = axios.isAxiosError(err)
-      ? err.response?.data?.message || err.message || '网络错误'
-      : String(err)
-    alert(`摄入失败：${msg}`)
-  } finally {
-    ingestLoading.value = false
-  }
-}
-
 async function fetchKbStats(): Promise<void> {
-  if (kbStatsLoading.value) return
+  const requestId = ++kbStatsRequestId
   kbStatsLoading.value = true
+  kbStatsError.value = ''
 
   try {
     const { data: res } = await axios.get<{
@@ -136,19 +133,68 @@ async function fetchKbStats(): Promise<void> {
       data: KbStatsData
     }>(`${API_BASE}/api/v1/kb/stats`)
 
+    if (requestId !== kbStatsRequestId) return
+
     if (res.code === 200) {
       kbStats.value = res.data
     } else {
-      alert(res.message || '获取知识库统计失败')
+      kbStatsError.value = res.message || '获取知识库统计失败'
     }
   } catch (err: unknown) {
+    if (requestId !== kbStatsRequestId) return
+
     const msg = axios.isAxiosError(err)
       ? err.response?.data?.message || err.message || '网络错误'
       : String(err)
-    alert(`获取知识库统计失败：${msg}`)
+    kbStatsError.value = `获取知识库统计失败：${msg}`
   } finally {
-    kbStatsLoading.value = false
+    if (requestId === kbStatsRequestId) {
+      kbStatsLoading.value = false
+    }
   }
+}
+
+async function showChunkPreview(docName: string): Promise<void> {
+  const requestId = ++chunkPreviewRequestId
+  previewDocName.value = docName
+  chunkPreview.value = null
+  chunkPreviewError.value = ''
+  chunkPreviewLoading.value = true
+
+  try {
+    const { data: res } = await axios.get<{
+      code: number
+      message: string
+      data: KbChunkPreviewData
+    }>(`${API_BASE}/api/v1/kb/chunks`, { params: { docName } })
+
+    if (requestId !== chunkPreviewRequestId || previewDocName.value !== docName) return
+
+    if (res.code === 200) {
+      chunkPreview.value = res.data
+    } else {
+      chunkPreviewError.value = res.message || '读取已入库文本预览失败'
+    }
+  } catch (err: unknown) {
+    if (requestId !== chunkPreviewRequestId || previewDocName.value !== docName) return
+
+    const msg = axios.isAxiosError(err)
+      ? err.response?.data?.message || err.message || '网络错误'
+      : String(err)
+    chunkPreviewError.value = `读取预览失败：${msg}`
+  } finally {
+    if (requestId === chunkPreviewRequestId && previewDocName.value === docName) {
+      chunkPreviewLoading.value = false
+    }
+  }
+}
+
+function closeChunkPreview(): void {
+  chunkPreviewRequestId += 1
+  previewDocName.value = ''
+  chunkPreview.value = null
+  chunkPreviewError.value = ''
+  chunkPreviewLoading.value = false
 }
 
 async function toggleKbPanel(): Promise<void> {
@@ -284,45 +330,33 @@ async function sendMessage(): Promise<void> {
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-gray-900 text-gray-200">
-    <header class="shrink-0 border-b border-gray-700 px-4 py-3">
-      <div class="mx-auto flex max-w-4xl items-center justify-between gap-4">
-        <h1 class="shrink-0 text-lg font-semibold tracking-wide">Yorushika 概念引擎</h1>
-        <div class="flex min-w-0 max-w-md flex-1 items-center gap-2">
-          <input
-            v-model="ingestUrlInput"
-            type="text"
-            placeholder="输入 B 站 / YouTube 链接，导入知识库"
-            :disabled="ingestLoading"
-            class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-3 py-2 text-sm text-gray-200 placeholder-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500 disabled:cursor-not-allowed disabled:opacity-50"
-            @keydown.enter.prevent="ingestUrl()"
-          />
-          <button
-            type="button"
-            :disabled="ingestLoading"
-            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
-            @click="ingestUrl()"
-          >
-            {{ ingestLoading ? '抓取中...' : '导入 URL' }}
-          </button>
+  <div class="flex min-h-screen flex-col bg-slate-50 text-slate-800">
+    <header class="shrink-0 border-b border-slate-200 bg-white">
+      <div class="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:px-6">
+        <div class="min-w-0">
+          <h1 class="text-xl font-semibold tracking-tight text-slate-900">RAG Nexus</h1>
+          <p class="mt-0.5 text-sm text-slate-500">文本知识库工作区</p>
+        </div>
+        <div class="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
           <input
             ref="fileInput"
             type="file"
             class="hidden"
-            accept=".txt,.md,.pdf,.doc,.docx"
+            accept=".txt,.md,.docx,.pdf"
             @change="handleFileUpload"
           />
           <button
             type="button"
             :disabled="uploadLoading"
-            class="shrink-0 rounded-lg border border-gray-600 bg-gray-700 px-3 py-2 text-sm font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:cursor-not-allowed disabled:opacity-50"
+            class="min-h-10 flex-1 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 sm:flex-none"
             @click="fileInput?.click()"
           >
             {{ uploadLoading ? '解析中...' : '上传文档' }}
           </button>
           <button
             type="button"
-            class="shrink-0 rounded-lg border border-indigo-500 bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2 focus:ring-offset-gray-900"
+            :aria-expanded="kbPanelOpen"
+            class="min-h-10 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 sm:flex-none"
             @click="toggleKbPanel()"
           >
             {{ kbPanelOpen ? '收起知识库' : '查看知识库' }}
@@ -330,125 +364,168 @@ async function sendMessage(): Promise<void> {
         </div>
       </div>
 
-      <Transition name="fade">
-        <p v-if="ingestSuccess" class="mt-2 text-center text-sm font-medium text-emerald-400">
-          资料导入成功，知识库已更新。
-        </p>
-      </Transition>
-
-      <div
+      <section
         v-if="kbPanelOpen"
-        class="mx-auto mt-3 max-w-4xl rounded-lg border border-gray-700 bg-gray-800/70 p-3"
+        aria-labelledby="knowledge-base-heading"
+        class="border-t border-slate-100 bg-slate-50 px-4 py-4 sm:px-6"
       >
-        <div class="mb-2 flex items-center justify-between">
-          <h2 class="text-sm font-semibold text-gray-100">知识库状态</h2>
-          <button
-            type="button"
-            :disabled="kbStatsLoading"
-            class="rounded border border-gray-600 bg-gray-700 px-2 py-1 text-xs text-gray-200 hover:bg-gray-600 disabled:opacity-50"
-            @click="fetchKbStats()"
-          >
-            {{ kbStatsLoading ? '刷新中...' : '刷新' }}
-          </button>
-        </div>
+        <div class="mx-auto max-w-6xl">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 id="knowledge-base-heading" class="font-semibold text-slate-900">知识库</h2>
+              <p class="mt-0.5 text-sm text-slate-500">选择文档可查看向量库中已保存的文本切片。</p>
+            </div>
+            <button
+              type="button"
+              :disabled="kbStatsLoading"
+              class="min-h-9 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-wait disabled:opacity-60"
+              @click="fetchKbStats()"
+            >
+              {{ kbStatsLoading ? '刷新中...' : '刷新列表' }}
+            </button>
+          </div>
 
-        <div v-if="kbStatsLoading && !kbStats" class="text-sm text-gray-400">加载中...</div>
+          <p v-if="kbStatsLoading && !kbStats" role="status" class="rounded-lg bg-white px-3 py-3 text-sm text-slate-600">
+            正在读取知识库…
+          </p>
+          <p v-else-if="kbStatsError" role="alert" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-800">
+            {{ kbStatsError }}
+          </p>
+          <p v-else-if="kbStats && kbStats.documents.length === 0" role="status" class="rounded-lg border border-slate-200 bg-white px-3 py-4 text-sm text-slate-600">
+            知识库暂无已入库切片。上传含可提取文本的 TXT、MD、DOCX 或 PDF 后，这里会显示文档。
+          </p>
+          <div v-else-if="kbStats" class="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+            <section class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div class="border-b border-slate-100 px-4 py-3 text-sm text-slate-600">
+                共 {{ kbStats.totalDocs }} 份文档、{{ kbStats.totalChunks }} 个切片
+              </div>
+              <ul class="max-h-64 divide-y divide-slate-100 overflow-y-auto">
+                <li v-for="doc in kbStats.documents" :key="doc.docName" class="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                  <div class="min-w-0 flex-1">
+                    <p class="break-all text-sm font-medium text-slate-800">{{ doc.docName }}</p>
+                    <p class="mt-0.5 text-xs text-slate-500">{{ doc.chunks }} 个已入库切片</p>
+                  </div>
+                  <button
+                    type="button"
+                    class="min-h-9 shrink-0 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700 hover:bg-indigo-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                    @click="showChunkPreview(doc.docName)"
+                  >
+                    查看切片
+                  </button>
+                </li>
+              </ul>
+            </section>
 
-        <div v-else-if="kbStats" class="space-y-2 text-sm text-gray-200">
-          <p>总切片：{{ kbStats.totalChunks }}，文档数：{{ kbStats.totalDocs }}</p>
-          <div class="max-h-40 overflow-y-auto rounded border border-gray-700">
-            <table class="w-full text-left text-xs">
-              <thead class="bg-gray-700/80 text-gray-300">
-                <tr>
-                  <th class="px-2 py-1">文档</th>
-                  <th class="w-24 px-2 py-1">Chunks</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="doc in kbStats.documents"
-                  :key="doc.docName"
-                  class="border-t border-gray-700"
+            <section v-if="previewDocName" aria-live="polite" class="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+              <div class="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+                <div class="min-w-0">
+                  <h3 class="font-semibold text-slate-900">切片内容</h3>
+                  <p class="mt-1 break-all text-sm text-slate-600">{{ previewDocName }}</p>
+                </div>
+                <button
+                  type="button"
+                  aria-label="关闭文本预览"
+                  class="min-h-9 rounded-lg px-3 text-sm font-medium text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                  @click="closeChunkPreview()"
                 >
-                  <td class="px-2 py-1">{{ doc.docName }}</td>
-                  <td class="px-2 py-1">{{ doc.chunks }}</td>
-                </tr>
-              </tbody>
-            </table>
+                  关闭
+                </button>
+              </div>
+              <div class="max-h-[55vh] space-y-3 overflow-y-auto p-4">
+                <p v-if="chunkPreviewLoading" role="status" class="text-sm text-slate-600">正在读取切片…</p>
+                <p v-else-if="chunkPreviewError" role="alert" class="rounded-lg bg-rose-50 p-3 text-sm text-rose-800">
+                  {{ chunkPreviewError }}
+                </p>
+                <p v-else-if="chunkPreview && !chunkPreview.found" role="status" class="rounded-lg bg-amber-50 p-3 text-sm leading-6 text-amber-900">
+                  没有找到这份文件的已入库切片。它可能已被移除，或没有可提取的文本；当前数据结构无法区分这两种情况。
+                </p>
+                <template v-else-if="chunkPreview">
+                  <p class="text-sm text-slate-600">
+                    共 {{ chunkPreview.totalChunks }} 个切片 · 当前显示 {{ chunkPreview.displayedChunks }} 个 · 预览 {{ previewCharacterCount }} 个字符
+                  </p>
+                  <p v-if="chunkPreview.truncated" role="status" class="text-sm text-amber-800">
+                    预览已截断<span v-if="chunkPreview.totalChunks > chunkPreview.displayedChunks"> · 仅显示前 {{ chunkPreview.displayedChunks }} 片</span><span v-if="hasTruncatedChunk"> · 个别切片只显示前 {{ chunkPreview.maxCharactersPerChunk }} 个字符</span>
+                  </p>
+                  <article v-for="(chunk, index) in chunkPreview.chunks" :key="`${previewDocName}-${index}`" class="overflow-hidden rounded-lg border border-slate-200">
+                    <h4 class="border-b border-slate-100 bg-slate-50 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                      切片 {{ index + 1 }} · {{ chunk.characterCount }} 个字符<span v-if="chunk.truncated"> · 已截断</span>
+                    </h4>
+                    <pre class="whitespace-pre-wrap break-words px-3 py-3 font-sans text-sm leading-6 text-slate-800">{{ chunk.text }}</pre>
+                  </article>
+                </template>
+              </div>
+            </section>
           </div>
         </div>
-      </div>
+      </section>
     </header>
 
-    <main class="flex-1 overflow-y-auto px-4 py-4">
-      <div class="mx-auto max-w-2xl space-y-4">
+    <section class="mx-auto w-full max-w-5xl px-4 pb-3 pt-5 sm:px-6">
+      <h2 class="text-lg font-semibold text-slate-900">知识库问答</h2>
+      <p class="mt-1 text-sm text-slate-500">上传文本资料后提问；回答会根据已检索到的片段生成。</p>
+    </section>
+
+    <main class="flex min-h-[18rem] flex-1 flex-col overflow-y-auto px-4 pb-4 sm:px-6">
+      <div class="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-3">
         <div
           v-for="msg in messages"
           :key="msg.id"
           :class="[
-            'rounded-lg px-4 py-3',
-            msg.role === 'user' ? 'ml-auto max-w-[85%] bg-gray-700' : 'mr-auto max-w-[90%] bg-gray-800',
+            'max-w-[95%] rounded-2xl border px-4 py-3 shadow-sm sm:max-w-[88%]',
+            msg.role === 'user'
+              ? 'ml-auto border-indigo-100 bg-indigo-50 text-slate-900'
+              : 'mr-auto border-slate-200 bg-white text-slate-800',
           ]"
         >
           <template v-if="msg.loading">
-            <div class="flex items-center gap-2 text-gray-400">
-              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400"></span>
-              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400" style="animation-delay: 0.2s"></span>
-              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-gray-400" style="animation-delay: 0.4s"></span>
-              <span class="ml-1 text-sm">思考中...</span>
+            <div class="flex items-center gap-2 text-sm text-slate-500">
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-500"></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-400" style="animation-delay: 0.2s"></span>
+              <span class="inline-block h-2 w-2 animate-pulse rounded-full bg-indigo-300" style="animation-delay: 0.4s"></span>
+              <span class="ml-1">思考中…</span>
             </div>
           </template>
           <template v-else>
             <div
               v-if="msg.role === 'assistant'"
-              class="prose prose-invert prose-sm max-w-none break-words"
+              class="prose prose-sm max-w-none break-words text-slate-800 prose-headings:text-slate-900 prose-a:text-indigo-700 prose-code:text-slate-800"
               v-html="md.render(msg.content)"
             />
-            <p v-else class="whitespace-pre-wrap break-words">{{ msg.content }}</p>
+            <p v-else class="whitespace-pre-wrap break-words text-sm leading-6">{{ msg.content }}</p>
           </template>
         </div>
         <div ref="messagesEnd" />
       </div>
     </main>
 
-    <footer class="shrink-0 border-t border-gray-700 px-4 py-3">
-      <div class="mx-auto flex max-w-2xl gap-2">
+    <footer class="shrink-0 border-t border-slate-200 bg-white px-4 py-3 sm:px-6">
+      <div class="mx-auto flex w-full max-w-5xl flex-col gap-2 sm:flex-row">
         <input
           v-model="inputText"
           type="text"
-          placeholder="输入问题，开始 RAG 对话..."
-          class="flex-1 rounded-lg border border-gray-600 bg-gray-800 px-4 py-2.5 text-gray-200 placeholder-gray-500 focus:border-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
+          placeholder="输入问题，开始 RAG 对话…"
+          class="min-h-11 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100"
           @keydown.enter.prevent="sendMessage()"
         />
-        <button
-          type="button"
-          :disabled="isStreaming"
-          class="rounded-lg bg-gray-700 px-4 py-2.5 font-medium text-gray-200 transition hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2 focus:ring-offset-gray-900"
-          @click="sendMessage()"
-        >
-          发送
-        </button>
-        <button
-          type="button"
-          :disabled="!isStreaming"
-          class="rounded-lg bg-red-700 px-4 py-2.5 font-medium text-gray-100 transition hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-40"
-          @click="stopGeneration()"
-        >
-          停止生成
-        </button>
+        <div class="grid grid-cols-2 gap-2 sm:flex">
+          <button
+            type="button"
+            :disabled="isStreaming"
+            class="min-h-11 rounded-lg bg-indigo-600 px-4 py-2.5 font-semibold text-white transition hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @click="sendMessage()"
+          >
+            发送
+          </button>
+          <button
+            type="button"
+            :disabled="!isStreaming"
+            class="min-h-11 rounded-lg border border-slate-300 bg-white px-4 py-2.5 font-medium text-slate-700 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            @click="stopGeneration()"
+          >
+            停止生成
+          </button>
+        </div>
       </div>
     </footer>
   </div>
 </template>
-
-<style scoped>
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-</style>

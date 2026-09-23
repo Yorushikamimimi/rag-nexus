@@ -80,6 +80,14 @@ public class KbController {
         return Result.ok(kbQueryService.getStats());
     }
 
+    @GetMapping(value = "/chunks", produces = MediaType.APPLICATION_JSON_VALUE)
+    public Result<Map<String, Object>> chunkPreview(@RequestParam(value = "docName", required = false) String docName) {
+        if (docName == null || docName.isBlank()) {
+            throw new IllegalArgumentException("docName 不能为空");
+        }
+        return Result.ok(kbQueryService.getChunkPreview(docName));
+    }
+
     @Operation(summary = "RAG 流式对话", description = "SSE 流式输出，实时推送 LLM 生成内容，降低首字延迟")
     @PostMapping(value = "/chat/stream", consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> streamChat(@Valid @RequestBody KbChatRequest request) {
