@@ -8,10 +8,11 @@
   - 本地运行：在 scripts/ 目录下执行 uvicorn scraper_service:app --reload
     此时 cookies.txt 应放在 scripts/ 目录下，或使用绝对路径
 """
+import ipaddress
 import logging
 import os
-import traceback
 from typing import Any
+from urllib.parse import urlsplit
 
 import yt_dlp
 from fastapi import FastAPI
@@ -26,6 +27,60 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG-Nexus Scraper Service", version="1.0.0")
+
+
+SUPPORTED_VIDEO_HOSTS = frozenset(
+    {
+        "bilibili.com",
+        "www.bilibili.com",
+        "m.bilibili.com",
+        "b23.tv",
+        "youtube.com",
+        "www.youtube.com",
+        "m.youtube.com",
+        "youtu.be",
+    }
+)
+
+
+class UnsupportedVideoUrl(ValueError):
+    """Raised when a URL is outside the scraper's supported host boundary."""
+
+
+def _validate_video_url(video_url: str) -> str:
+    """Return the normalized approved host, rejecting ambiguous or external URLs."""
+    if not video_url or any(ord(char) <= 0x20 or ord(char) == 0x7F for char in video_url):
+        raise UnsupportedVideoUrl("invalid URL")
+
+    try:
+        parsed = urlsplit(video_url)
+        host = parsed.hostname
+        port = parsed.port
+    except ValueError as exc:
+        raise UnsupportedVideoUrl("invalid URL") from exc
+
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or not host:
+        raise UnsupportedVideoUrl("unsupported URL")
+    if parsed.username is not None or parsed.password is not None or "@" in parsed.netloc:
+        raise UnsupportedVideoUrl("unsupported URL")
+    if port is not None or parsed.netloc.endswith(":") or host.endswith("."):
+        raise UnsupportedVideoUrl("unsupported URL")
+
+    try:
+        normalized_host = host.encode("idna").decode("ascii").lower()
+    except UnicodeError as exc:
+        raise UnsupportedVideoUrl("unsupported URL") from exc
+
+    try:
+        ipaddress.ip_address(normalized_host)
+    except ValueError:
+        pass
+    else:
+        raise UnsupportedVideoUrl("unsupported URL")
+
+    if normalized_host not in SUPPORTED_VIDEO_HOSTS:
+        raise UnsupportedVideoUrl("unsupported URL")
+    return normalized_host
 
 
 # ---------- Pydantic DTOs ----------
@@ -58,6 +113,8 @@ def _extract_video_metadata(video_url: str) -> ExtractData:
     使用 yt-dlp 提取视频元数据和简介。
     cookies.txt 为 B 站 Cookie 时仅对 bilibili.com 生效；YouTube 需单独导出 cookie。
     """
+    _validate_video_url(video_url)
+
     ydl_opts: dict[str, Any] = {
         "quiet": True,
         "skip_download": True,
@@ -88,28 +145,38 @@ def _extract_video_metadata(video_url: str) -> ExtractData:
 def extract_video(request: ExtractRequest) -> ApiResponse:
     """
     从视频链接提取 title / description / uploader。
-    抓取失败时返回 code=500 及错误信息，绝不 Crash。
+    抓取失败时返回通用错误，不向调用方返回异常细节。
     """
     url = request.url.strip()
     if not url:
         return ApiResponse(code=400, message="url 不能为空", data=None)
-    # SSRF 防护：只允许 http/https，拒绝 file://、内网地址等
-    if not (url.startswith("http://") or url.startswith("https://")):
-        return ApiResponse(code=400, message="仅支持 http/https 链接", data=None)
+
+    try:
+        approved_host = _validate_video_url(url)
+    except UnsupportedVideoUrl:
+        return ApiResponse(
+            code=400,
+            message="仅支持 B 站或 YouTube 的 http(s) 视频链接",
+            data=None,
+        )
 
     try:
         data = _extract_video_metadata(url)
         return ApiResponse(code=200, message="success", data=data)
-    except yt_dlp.utils.DownloadError as e:
-        err_msg = f"yt-dlp 抓取失败（可能需登录/验证）: {e}"
-        logger.warning(err_msg)
-        return ApiResponse(code=500, message=err_msg, data=None)
-    except Exception as e:
-        err_msg = f"{type(e).__name__}: {e}"
-        stack = traceback.format_exc()
-        logger.error("抓取异常:\n%s", stack)
-        return ApiResponse(code=500, message=f"{err_msg}\n{stack}", data=None)
-
+    except yt_dlp.utils.DownloadError:
+        logger.warning("yt-dlp extraction failed for approved host %s", approved_host)
+        return ApiResponse(
+            code=500,
+            message="视频元数据抓取失败，请确认链接可访问或无需额外验证",
+            data=None,
+        )
+    except Exception as exc:
+        logger.error("Unexpected scraper extraction error (%s)", type(exc).__name__)
+        return ApiResponse(
+            code=500,
+            message="视频元数据抓取失败，请稍后重试",
+            data=None,
+        )
 
 # ---------- 启动入口 ----------
 

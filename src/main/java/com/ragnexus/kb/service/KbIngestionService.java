@@ -39,6 +39,14 @@ public class KbIngestionService {
     private static final String METADATA_AUTHOR = "author";
     private static final String METADATA_SOURCE_TYPE = "sourceType";
     private static final int DEFAULT_CHUNK_SIZE = 500;
+    private static final String NO_INDEXABLE_CHUNKS_MESSAGE =
+            "未生成可入库切片；本次未写入新向量，已有向量保持不变。请检查文件是否包含可提取文本。";
+
+    private static final class NoIndexableChunksException extends IllegalArgumentException {
+        private NoIndexableChunksException(String message) {
+            super(message);
+        }
+    }
 
     @Value("${scraper.service.url:http://127.0.0.1:8000}")
     private String scraperServiceBaseUrl;
@@ -72,6 +80,9 @@ public class KbIngestionService {
                 .withMinChunkLengthToEmbed(1)
                 .build();
         List<Document> chunks = splitter.apply(sourceDocs);
+        if (chunks.isEmpty()) {
+            throw new NoIndexableChunksException(NO_INDEXABLE_CHUNKS_MESSAGE);
+        }
         List<Document> documentsWithMeta = chunks.stream()
                 .map(doc -> new Document(doc.getText(), metadata))
                 .collect(Collectors.toList());
@@ -92,6 +103,8 @@ public class KbIngestionService {
             int chunks = splitAndStore(List.of(new Document(request.getContent())), metadata, request.getChunkSize());
             log.info("Ingest success: docName={}, chunks={}", request.getDocName(), chunks);
             return chunks;
+        } catch (NoIndexableChunksException e) {
+            throw e;
         } catch (Exception e) {
             log.error("KbIngestionService.ingest failed: docName={}", request.getDocName(), e);
             throw new RuntimeException("知识库注入失败: " + e.getMessage(), e);
@@ -148,6 +161,9 @@ public class KbIngestionService {
      * 使用 TikaDocumentReader 解析本地多模态文件（PDF、DOC、PPT 等），分块后入库。
      */
     public int ingestFromFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new NoIndexableChunksException(NO_INDEXABLE_CHUNKS_MESSAGE);
+        }
         String filename = file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown";
         try (InputStream inputStream = file.getInputStream()) {
             InputStreamResource resource = new InputStreamResource(inputStream);
@@ -156,7 +172,7 @@ public class KbIngestionService {
 
             if (documents == null || documents.isEmpty()) {
                 log.warn("Tika 解析未提取到内容: filename={}", filename);
-                throw new RuntimeException("文件解析失败: 未提取到有效文本内容");
+                throw new NoIndexableChunksException(NO_INDEXABLE_CHUNKS_MESSAGE);
             }
 
             Map<String, Object> metadata = Map.of(

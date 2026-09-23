@@ -10,8 +10,9 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
@@ -21,6 +22,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultHandlers.print;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -158,6 +160,22 @@ class KbControllerTest {
                 .andExpect(jsonPath("$.code").value(200))
                 .andExpect(jsonPath("$.data.docName").value("春泥.md"))
                 .andExpect(jsonPath("$.data.chunksCreated").value(8));
+    }
+
+    @Test
+    @DisplayName("POST /upload - 文件无可入库切片：HTTP 400，已有向量保持不变")
+    void upload_noIndexableChunks_returnsBadRequest() throws Exception {
+        when(kbIngestionService.ingestFromFile(any()))
+                .thenThrow(new IllegalArgumentException(
+                        "未生成可入库切片；本次未写入新向量，已有向量保持不变。请检查文件是否包含可提取文本。"));
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "scan.pdf", "application/pdf", "synthetic-pdf".getBytes());
+
+        mockMvc.perform(multipart("/api/v1/kb/upload").file(file))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value(400))
+                .andExpect(jsonPath("$.message").value(
+                        "未生成可入库切片；本次未写入新向量，已有向量保持不变。请检查文件是否包含可提取文本。"));
     }
 
     @Test

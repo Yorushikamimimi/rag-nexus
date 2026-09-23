@@ -12,7 +12,7 @@
 
 **基于 Spring AI + pgvector 的全栈 RAG 知识库问答系统**
 
-支持文档（PDF / DOC / PPT）、纯文本、视频链接（B 站 / YouTube）三种内容注入，提供流式对话问答接口与 Vue 3 前端页面，一键 Docker Compose 部署。
+提供文件、纯文本和视频 URL 三种入库入口，以及同步 / SSE 问答接口和 Vue 3 前端。当前文件选择器允许 TXT / MD / PDF / DOC / DOCX；视频 URL 流程通过 yt-dlp 读取元数据，不下载视频或导入字幕。仓库提供 Docker Compose 编排配置，本轮未启动整套 Compose。
 
 </div>
 
@@ -37,8 +37,8 @@
 | 功能 | 说明 |
 |------|------|
 | **文本注入** | 接收原始文本，按 Token 分块后向量化写入 pgvector |
-| **文件上传** | 使用 Apache Tika 解析 PDF / DOC / DOCX / PPT / TXT / MD，分块入库 |
-| **URL 注入** | 调用 FastAPI 爬虫服务，通过 yt-dlp 抓取 B 站 / YouTube 视频标题与简介入库 |
+| **文件上传** | 前端选择器允许 TXT / MD / PDF / DOC / DOCX；后端使用 Apache Tika 提取文本后分块，无可索引切片时返回 HTTP 400 且明确说明未写入新向量、已有向量保持不变。本轮验证 TXT / MD / DOCX / 文本层 PDF；旧 DOC 未验证，PPT 不在当前选择器中 |
+| **URL 注入** | 调用 FastAPI 爬虫服务，通过 yt-dlp 读取 B 站 / YouTube 的标题、简介和上传者元数据；仅接受 README 下方列出的 Bilibili / YouTube 主机。当前不下载视频或导入字幕；本轮仅验证一条公开 YouTube 链接 |
 | **RAG 问答** | 向量相似度召回 Top-K 切片，拼装 System Prompt 后调用 LLM 生成回答 |
 | **SSE 流式问答** | 基于 `Flux<String>` 的 Server-Sent Events，前端实时渲染，支持手动中断 |
 | **多轮对话记忆** | `MessageWindowChatMemory` 滑动窗口，每个 sessionId 保留最近 10 轮上下文 |
@@ -48,18 +48,29 @@
 | **Vue 3 前端** | 暗色主题，含文档管理面板、流式对话、Markdown 渲染 |
 | **Docker Compose** | 4 服务一键编排（pgvector / Python 爬虫 / Spring Boot / Vue+Nginx） |
 
+> **URL 抓取边界：** 入站链接仅接受 Bilibili 的 `bilibili.com`、`www.bilibili.com`、`m.bilibili.com`、`b23.tv`，以及 YouTube 的 `youtube.com`、`www.youtube.com`、`m.youtube.com`、`youtu.be`。该校验只检查初始主机；yt-dlp 可能跟随重定向或发起 extractor 后续请求，因此白名单不能单独构成完整 SSRF 防护，部署仍需限制网络出口。
+
+> **错误状态边界：** scraper 拒绝请求时可在响应体返回业务码 `code=400`；Spring Boot URL 入库流程会包装非 200 业务码，当前对外 HTTP 状态可能为 500，后续需统一错误映射。
+
 ### 暂未实现
 
 | 功能 | 说明 |
 |------|------|
-| OCR | 仅支持含文本层的 PDF，扫描件 / 图片 PDF 无法解析 |
+| OCR | 未接入 OCR；无文本层的扫描件 / 图片 PDF 不在当前验证范围内 |
 | 权限与认证 | 所有 API 当前完全开放，无 Spring Security |
 | 持久化会话历史 | 会话记忆为内存级别，后端重启后丢失 |
 | 监控与可观测性 | 无 Prometheus / 链路追踪等配置 |
 
 ### 测试覆盖
 
-仓库目前包含 6 个 Controller 层 `@WebMvcTest` 切片测试，通过 Mockito 隔离后端服务依赖，覆盖请求校验、响应包装及异常响应。2026-09-23 本次审查执行 `mvn -o test`：6 个测试通过（0 失败、0 错误、0 跳过）。这些测试没有覆盖真实数据库、LLM、爬虫服务或完整 RAG 链路的端到端流程。
+仓库包含 7 个 Controller 层 `@WebMvcTest` 切片测试和 2 个入库服务单元测试，通过 Mockito 隔离后端服务依赖，覆盖请求校验、无可索引文本拒绝、响应包装及异常响应。2026-09-23 在 JDK 21 下的隔离源码副本执行 `mvn -o -Dtest=KbControllerTest,KbIngestionServiceTest test`：9 个测试通过（0 失败、0 错误、0 跳过）。这些测试没有覆盖真实数据库、LLM、爬虫服务或完整 RAG 链路。
+
+### 本轮真实服务验证（2026-09-23）
+
+- 在临时 PostgreSQL/pgvector、Spring Boot、实际 yt-dlp 爬虫服务和本地 Ollama 模型上，以合成资料验证上传与问答：TXT、MD、DOCX、有效文本层 PDF 各写入 1 个切片；RAG 问答返回合成标记并带来源。
+- 入口安全加固前的隔离联调记录：一条公开 YouTube URL 经爬虫和 `/api/v1/kb/ingest/url` 入库，生成 2 个切片；抓取配置跳过视频下载，当前代码只将标题与简介作为内容，来源元数据另存上传者。加固后重新请求外网未成功，原因未确认，因此尚无加固后外网抓取与入库通过的验证。
+- 前端类型检查与生产构建通过（`vue-tsc -b --pretty false`、`vite build`）；本轮未运行 Playwright。仓库当前未找到 Playwright 配置或测试文件，浏览器直连真实服务也未验证。
+- 未验证：整套 Docker Compose、干净机器首次启动、旧 DOC / PPT 文件、扫描件 OCR、托管模型服务。此次没有下载模型，也没有调用 OpenAI / DashScope。
 
 ---
 
@@ -131,7 +142,7 @@ flowchart TB
                    └─→ pgvector vector_store (HNSW + 余弦距离)
 
 [方式 B] 文件上传 POST /api/v1/kb/upload
-    └─→ Apache Tika 解析文本层 (PDF / DOC / PPT / TXT / MD)
+    └─→ Apache Tika 解析文本层（本轮验证：PDF / DOCX / TXT / MD；DOC 未验证，PPT 未验证且不在前端选择器中）
          └─→ 同上分块 → embedding → pgvector
 
 [方式 C] URL POST /api/v1/kb/ingest/url
@@ -383,7 +394,7 @@ rag-nexus/
 - [ ] 会话历史持久化（Redis 或数据库存储）
 - [ ] 添加 Spring Security 基础权限控制
 - [ ] `overlap` 参数接入 `TokenTextSplitter`，修复分块重叠逻辑
-- [x] Controller 切片测试（`@WebMvcTest` + Mockito，6 用例，`mvn test` 即可运行）
+- [x] Controller 切片测试（`@WebMvcTest` + Mockito，7 用例；另有 2 个入库服务单元测试）
 - [ ] 支持知识库文档删除接口
 - [ ] RAG 召回效果评估（Recall@K 等指标）
 
